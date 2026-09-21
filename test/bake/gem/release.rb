@@ -7,12 +7,14 @@ require "bake/gem/helper"
 require "bake/gem/release"
 require "bake/context"
 require "sus/fixtures/console/null_logger"
+require "sus/fixtures/temporary_directory_context"
 require "open3"
 
 RELEASE_TASK_ROOT = File.expand_path("../../..", __dir__)
 
 describe Bake::Gem::Release do
 	include Sus::Fixtures::Console::NullLogger
+	include Sus::Fixtures::TemporaryDirectoryContext
 	
 	def git(*arguments)
 		output, status = Open3.capture2e("git", *arguments, chdir: @root)
@@ -41,8 +43,7 @@ describe Bake::Gem::Release do
 	end
 	
 	def around
-		Dir.mktmpdir do |root|
-			@root = root
+		super do
 			git("init", "--initial-branch=main")
 			git("config", "core.hooksPath", File::NULL)
 			git("config", "user.name", "Release Test")

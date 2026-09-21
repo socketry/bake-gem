@@ -82,14 +82,16 @@ module Bake
 		end
 		
 		# Helper class for performing gem-related operations like building, installing, and publishing gems.
+		# The process must already be in the gem project's root directory when constructing and using a helper.
+		# Gemspec evaluation and packaging resolve relative paths against that working directory; the helper does not change it.
 		class Helper
 			include Shell
 			
 			# Initialize a new helper with the specified root directory and optional gemspec.
-			# @parameter root [String] The root directory of the gem project.
+			# @parameter root [String] The root directory of the gem project, which must also be the process's working directory.
 			# @parameter gemspec [Gem::Specification | Nil] The gemspec to use, or nil to find it automatically.
 			def initialize(root = Dir.pwd, gemspec: nil)
-				@root = File.expand_path(root)
+				@root = root
 				@gemspec = gemspec || find_gemspec
 			end
 			
@@ -208,9 +210,7 @@ module Bake
 					raise ArgumentError, "Signing key is required for signing the gem, but none was specified by the gemspec."
 				end
 				
-				Dir.chdir(@root) do
-					::Gem::Package.build(@gemspec, false, false, output_path)
-				end
+				::Gem::Package.build(@gemspec, false, false, output_path)
 			end
 			
 			# Install the gem using the `gem install` command.
@@ -347,7 +347,7 @@ module Bake
 				end
 				
 				if path = paths.first
-					return Dir.chdir(@root){::Gem::Specification.load(File.expand_path(path, @root))}
+					return ::Gem::Specification.load(File.expand_path(path, @root))
 				end
 			end
 		end

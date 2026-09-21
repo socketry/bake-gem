@@ -6,8 +6,7 @@
 
 require "bake/gem/helper"
 require "sus/fixtures/console/null_logger"
-
-require "tmpdir"
+require "sus/fixtures/temporary_directory_context"
 
 describe Bake::Gem::Helper do
 	let(:helper) {subject.new}
@@ -51,18 +50,22 @@ describe Bake::Gem::Helper do
 	end
 	
 	with "repository" do
+		include Sus::Fixtures::TemporaryDirectoryContext
+		
 		let(:helper) {@helper}
 		
 		def around
-			Dir.mktmpdir do |root|
-				@helper = subject.new(root)
-				
-				system("git", "init", chdir: root)
-				system("git", "config", "core.hooksPath", File::NULL, chdir: root)
-				system("git", "config", "user.email", "test@test.com", chdir: root)
-				system("git", "config", "user.name", "Test User", chdir: root)
-				
-				yield
+			super do
+				Dir.chdir(root) do
+					@helper = subject.new(root)
+					
+					system("git", "init", chdir: root)
+					system("git", "config", "core.hooksPath", File::NULL, chdir: root)
+					system("git", "config", "user.email", "test@test.com", chdir: root)
+					system("git", "config", "user.name", "Test User", chdir: root)
+					
+					yield
+				end
 			end
 		end
 		

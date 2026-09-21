@@ -20,6 +20,8 @@ end
 
 ## Usage
 
+Run Bake tasks from the gem project's root directory. When using `Bake::Gem::Helper` directly, construct and use it with that directory as the process's working directory. Gemspec evaluation and packaging resolve relative paths there; the helper does not change the working directory.
+
 Before using `bake-gem`, ensure you have:
 
 1. A properly configured `gemspec` file in your project root
@@ -133,7 +135,7 @@ The tool automatically prevents consecutive version bumps by checking the last c
 ### Clean Worktree Building
 Gems are built in isolated git worktrees to ensure the build environment exactly matches your committed code, preventing issues with uncommitted changes affecting the build.
 
-Builds and release validation run Bake tasks in fresh Ruby processes so version constants and hook state come from each checkout.
+Worktree builds and release validation run Bake tasks in fresh Ruby processes launched with the checkout as their working directory, so version constants and hook state come from each checkout. The parent process's working directory is unchanged.
 
 ### Repository Cleanliness Check
 Before any release operation, the tool ensures your repository has no uncommitted changes.
