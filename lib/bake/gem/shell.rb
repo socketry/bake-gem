@@ -32,11 +32,12 @@ module Bake
 		module Shell
 			# Execute a system command with logging and error handling.
 			# @parameter arguments [Array] The command and its arguments to execute.
+			# @parameter severity [Symbol] The log severity for the command's spawn event.
 			# @parameter options [Hash] Additional options to pass to Process.spawn.
 			# @returns [Boolean] True if the command executed successfully.
 			# @raises [CommandExecutionError] If the command fails.
-			def system(*arguments, **options)
-				Console::Event::Spawn.for(*arguments, **options).emit(self)
+			def system(*arguments, severity: :info, **options)
+				Console::Event::Spawn.for(*arguments, **options).emit(self, severity: severity)
 				
 				begin
 					pid = Process.spawn(*arguments, **options)

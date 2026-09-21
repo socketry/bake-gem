@@ -63,8 +63,8 @@ module Bake
 				Dir.mktmpdir("bake-gem-result-") do |directory|
 					result = File.join(directory, "result.json")
 					options.each{|key, value| arguments << "#{key}=#{value}" unless value.nil?}
-					arguments.concat(["output", "file=#{result}", "format=json"])
-					system({"RUBYOPT" => nil, "BUNDLE_GEMFILE" => nil}, RbConfig.ruby, "-I", $LOAD_PATH.join(File::PATH_SEPARATOR), "-e", script, "--", *arguments, chdir: path)
+					Console.info(self, "Running Bake tasks.", path: path, tasks: arguments)
+					system({"RUBYOPT" => nil, "BUNDLE_GEMFILE" => nil}, RbConfig.ruby, "-I", $LOAD_PATH.join(File::PATH_SEPARATOR), "-e", script, "--", *arguments, "output", "file=#{result}", "format=json", chdir: path, severity: :debug)
 					JSON.parse(File.read(result), symbolize_names: true)
 				end
 			end

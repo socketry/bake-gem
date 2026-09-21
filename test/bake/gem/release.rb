@@ -5,6 +5,7 @@
 
 require "bake/gem/helper"
 require "bake/gem/release"
+require "sus/fixtures/console/captured_logger"
 require "sus/fixtures/console/null_logger"
 require "sus/fixtures/isolated_ruby_context"
 require "sus/fixtures/temporary_directory_context"
@@ -83,6 +84,28 @@ describe Bake::Gem::Release do
 		expect(git("show", "HEAD:releases.md")).to be == "1.0.1\nFirst change"
 		expect(File).not.to be(:exist?, File.join(@root, "obsolete.md"))
 		expect(@release.validate(base: @base)[:version]).to be == "1.0.1"
+	end
+	
+	with "task logging" do
+		include Sus::Fixtures::Console::CapturedLogger
+		
+		it "logs only a concise task summary at info level" do
+			console_logger.level = :info
+			result = @release.bake(root, "gem:metadata")
+			expect(result[:name]).to be == "example"
+			expect(console_capture.to_a.size).to be == 1
+			expect(console_capture.first).to have_keys(severity: be == :info, tasks: be == ["gem:metadata"], path: be == root)
+		end
+		
+		it "retains the full subprocess invocation at debug level" do
+			@release.bake(root, "gem:metadata")
+			expect(console_capture.to_a.size).to be == 2
+			expect(console_capture.last).to have_keys(severity: be == :debug)
+			arguments = console_capture.last.fetch(:event).fetch(:arguments)
+			expect(arguments).to be(:include?, "-I")
+			expect(arguments).to be(:include?, "-e")
+			expect(arguments[arguments.index("-e") + 1]).to be(:include?, 'require "bake/context"')
+		end
 	end
 	
 	it "builds the committed version even when the caller has loaded the old version" do
