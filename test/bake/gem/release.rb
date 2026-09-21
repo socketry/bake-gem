@@ -89,17 +89,12 @@ describe Bake::Gem::Release do
 	with "task logging" do
 		include Sus::Fixtures::Console::CapturedLogger
 		
-		it "does not log internal task invocations at info level" do
+		it "logs the direct Bake invocation at info level" do
 			console_logger.level = :info
 			result = @release.bake(root, "gem:metadata")
 			expect(result[:name]).to be == "example"
-			expect(console_capture).to be(:empty?)
-		end
-		
-		it "logs the direct Bake invocation at debug level" do
-			@release.bake(root, "gem:metadata")
 			expect(console_capture.to_a.size).to be == 1
-			expect(console_capture.last).to have_keys(severity: be == :debug)
+			expect(console_capture.last).to have_keys(severity: be == :info)
 			arguments = console_capture.last.fetch(:event).fetch(:arguments)
 			expect(arguments.first(2)).to be == ["bake", "gem:metadata"]
 			expect(console_capture.last.fetch(:event).fetch(:options)).to have_keys(chdir: be == root)

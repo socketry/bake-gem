@@ -48,7 +48,7 @@ module Bake
 				Dir.mktmpdir("bake-gem-result-") do |directory|
 					result = File.join(directory, "result.json")
 					options.each{|key, value| arguments << "#{key}=#{value}" unless value.nil?}
-					system("bake", *arguments, "output", "file=#{result}", "format=json", chdir: path, severity: :debug)
+					system("bake", *arguments, "output", "file=#{result}", "format=json", chdir: path)
 					JSON.parse(File.read(result), symbolize_names: true)
 				end
 			end
