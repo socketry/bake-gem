@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v0.15.0
 
   - Prepare release branches with `gem:release:branch:patch/minor/major`, committing the version bump and all release-hook changes before review.
   - Add `gem:release:validate` to detect stale generated release content and unrelated changes.

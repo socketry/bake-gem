@@ -14,6 +14,13 @@ Please see the [project documentation](https://ioquatix.github.io/bake-gem/) for
 
 Please see the [project releases](https://ioquatix.github.io/bake-gem/releases/index) for all releases.
 
+### v0.15.0
+
+  - Prepare release branches with `gem:release:branch:patch/minor/major`, committing the version bump and all release-hook changes before review.
+  - Add `gem:release:validate` to detect stale generated release content and unrelated changes.
+  - Build committed source in a fresh Ruby process and accept an explicit signing key path with `gem:build`.
+  - Push only the intended release tag when publishing locally.
+
 ### v0.13.1
 
   - Better `version.rb` detection in `version_path` method.
