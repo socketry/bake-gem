@@ -85,6 +85,19 @@ describe Bake::Gem::Release do
 		expect(@release.validate(base: @base)[:version]).to be == "1.0.1"
 	end
 	
+	it "builds the committed version even when the caller has loaded the old version" do
+		prepare
+		expect(Example::VERSION).to be == "1.0.0"
+		
+		@release.worktree("HEAD") do |path|
+			package_path = @release.bake(path, "gem:build", root: File.join(@root, "packages with spaces"), signing_key: false)
+			package = Gem::Package.new(package_path)
+			package.extract_files(File.join(@root, "extracted"))
+			expect(package.spec.version.to_s).to be == "1.0.1"
+			expect(File.read(File.join(@root, "extracted/lib/example/version.rb"))).to be(:include?, 'VERSION = "1.0.1"')
+		end
+	end
+	
 	it "rejects a dirty checkout before changing branch or version" do
 		write("unrelated.txt", "Uncommitted")
 		expect{prepare}.to raise_exception(RuntimeError, message: be =~ /uncommited/)

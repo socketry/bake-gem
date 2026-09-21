@@ -41,22 +41,37 @@ module Bake
 				end
 			end
 			
-			# Run repository code in a fresh interpreter, avoiding cached version constants.
-			def run(path, action, **options)
+			# Run Bake tasks in a fresh interpreter, avoiding cached version constants.
+			# @parameter path [String] The checkout in which to run the tasks.
+			# @parameter arguments [Array(String)] Task names and command line arguments.
+			# @parameter options [Hash] Task options; nil values use the task defaults.
+			def bake(path, *arguments, **options)
+				# Reuse the caller's dependencies and task paths without loading its gemspec:
+				paths = ::Gem.loaded_specs.values.map(&:full_gem_path)
+				paths << File.expand_path("../../..", __dir__)
+				script = <<~RUBY
+					require "bake/context"
+					registry = Bake::Registry::Aggregate.new
+					#{paths.inspect}.each{|path| registry.append_path(path)}
+					registry.append_path(Dir.pwd)
+					registry.append_bakefile(File.expand_path("bake.rb")) if File.file?("bake.rb")
+					context = Bake::Context.new(registry, Dir.pwd)
+					context.bakefile
+					context.call(*ARGV)
+				RUBY
+				
 				Dir.mktmpdir("bake-gem-result-") do |directory|
 					result = File.join(directory, "result.json")
-					request = {action: action, options: options, result: result, load_path: $LOAD_PATH, gems: ::Gem.loaded_specs.values.map(&:full_gem_path)}
-					request_path = File.join(directory, "request.json")
-					File.write(request_path, JSON.generate(request))
-					worker = File.expand_path("release/worker.rb", __dir__)
-					system({"RUBYOPT" => nil, "BUNDLE_GEMFILE" => nil}, RbConfig.ruby, worker, request_path, chdir: path)
+					options.each{|key, value| arguments << "#{key}=#{value}" unless value.nil?}
+					arguments.concat(["output", "file=#{result}", "format=json"])
+					system({"RUBYOPT" => nil, "BUNDLE_GEMFILE" => nil}, RbConfig.ruby, "-I", $LOAD_PATH.join(File::PATH_SEPARATOR), "-e", script, "--", *arguments, chdir: path)
 					JSON.parse(File.read(result), symbolize_names: true)
 				end
 			end
 			
 			# Inspect a committed gem in isolation.
 			def metadata(reference)
-				worktree(reference) {|path| run(path, "metadata")}
+				worktree(reference) {|path| bake(path, "gem:metadata")}
 			end
 			
 			# Validate an ordinary patch, minor, or major transition.
@@ -80,11 +95,11 @@ module Bake
 				candidate = resolve(candidate)
 				proposed = metadata(candidate)
 				worktree(base) do |path|
-					previous = run(path, "metadata")
+					previous = bake(path, "gem:metadata")
 					raise "Release changes the gem name." unless proposed[:name] == previous[:name]
 					return nil if optional && proposed[:version] == previous[:version]
 					increment = bump(previous[:version], proposed[:version])
-					generated = run(path, "prepare", bump: BUMPS.fetch(increment))
+					generated = bake(path, "gem:release:version:increment", BUMPS.fetch(increment).join(","))
 					raise "Generated version does not match proposal." unless generated[:version] == proposed[:version]
 					system("git", "add", "--all", chdir: path)
 					expected = readlines("git", "write-tree", chdir: path).join.strip

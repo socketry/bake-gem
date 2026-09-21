@@ -244,9 +244,9 @@ module Bake
 						raise "Failed to create git worktree. Make sure you have at least one commit in the repository."
 					end
 					
-					# Create helper for the worktree
+					# Build using the worktree's gemspec in a fresh interpreter:
 					require_relative "release"
-					output_path = Release.new(@root).run(worktree_path, "build", root: original_pkg_path, signing_key: signing_key)
+					output_path = Release.new(@root).bake(worktree_path, "gem:build", root: original_pkg_path, signing_key: signing_key)
 					
 					output_path
 				ensure

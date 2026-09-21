@@ -116,6 +116,9 @@ $ bake gem:install
 # List files that will be included in the gem
 $ bake gem:files
 
+# Inspect the gem name, version, and version file as JSON
+$ bake gem:metadata output format=json
+
 # Build without signing
 $ bake gem:build signing_key=false
 ```
@@ -130,6 +133,8 @@ The tool automatically prevents consecutive version bumps by checking the last c
 ### Clean Worktree Building
 Gems are built in isolated git worktrees to ensure the build environment exactly matches your committed code, preventing issues with uncommitted changes affecting the build.
 
+Builds and release validation run Bake tasks in fresh Ruby processes so version constants and hook state come from each checkout.
+
 ### Repository Cleanliness Check
 Before any release operation, the tool ensures your repository has no uncommitted changes.
 
@@ -142,6 +147,12 @@ To sign your gems, ensure your gemspec includes:
 ``` ruby
 spec.signing_key = "path/to/private_key.pem"
 spec.cert_chain = ["path/to/certificate.pem"]
+```
+
+To supply a signing key when building:
+
+``` bash
+$ bake gem:build signing_key=/path/to/private_key.pem
 ```
 
 Or disable signing explicitly:

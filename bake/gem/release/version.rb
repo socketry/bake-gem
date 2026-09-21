@@ -36,6 +36,7 @@ def increment(bump, message: "Bump version.")
 		after_increment(version)
 	end
 	raise "Could not find version number!" unless version_path
+	helper.guard_release_changes
 	
 	return {
 		version: gemspec.version,
