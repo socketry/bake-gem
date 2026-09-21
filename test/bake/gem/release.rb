@@ -32,11 +32,15 @@ describe Bake::Gem::Release do
 		git("rev-parse", "HEAD")
 	end
 	
-	def prepare
+	def bake(*arguments)
 		isolated_ruby(<<~RUBY, chdir: root)
 			require "bake/context"
-			Bake::Context.load.call("gem:release:branch:patch")
+			Bake::Context.load.call(*#{arguments.inspect})
 		RUBY
+	end
+	
+	def prepare
+		bake("gem:release:branch:patch")
 	end
 	
 	def around
@@ -100,6 +104,87 @@ describe Bake::Gem::Release do
 		expect(File.read(File.join(@root, "extracted/lib/example/version.rb"))).to be(:include?, 'VERSION = "1.0.1"')
 	end
 	
+	it "reports gem metadata through the task" do
+		expect(bake("gem:metadata")).to be == {name: "example", version: "1.0.0", version_path: "lib/example/version.rb"}
+		File.delete(File.join(root, "example.gemspec"))
+		expect{bake("gem:metadata")}.to raise_exception(RuntimeError, message: be =~ /No gemspec found/)
+	end
+	
+	it "commits the version and hook output on the current branch" do
+		result = bake("gem:release:version:minor")
+		expect(result[:version].to_s).to be == "1.1.0"
+		expect(result[:version_path]).to be == "lib/example/version.rb"
+		expect(git("branch", "--show-current")).to be == "main"
+		expect(git("status", "--porcelain")).to be == ""
+		expect(git("show", "HEAD:releases.md")).to be == "1.1.0\nFirst change"
+		expect(File).not.to be(:exist?, File.join(root, "obsolete.md"))
+	end
+	
+	it "validates a release through the task" do
+		prepare
+		result = bake("gem:release:validate", "base=#{@base}")
+		expect(result).to have_keys(version: be == "1.0.1", base: be == @base, commit: be == git("rev-parse", "HEAD"))
+	end
+	
+	it "rejects prereleases and incomplete version numbers" do
+		expect{@release.bump("1.0.0", "1.0.1-alpha")}.to raise_exception(RuntimeError, message: be =~ /stable three-part versions/)
+		expect{@release.bump("1.0", "1.0.1")}.to raise_exception(RuntimeError, message: be =~ /stable three-part versions/)
+	end
+	
+	it "removes the temporary worktree when generation fails" do
+		worktree = nil
+		expect do
+			@release.worktree(@base) do |path|
+				worktree = path
+				File.write(File.join(path, "partial.txt"), "Partial output")
+				raise "Generation failed"
+			end
+		end.to raise_exception(RuntimeError, message: be == "Generation failed")
+		expect(File).not.to be(:exist?, worktree)
+		expect(git("worktree", "list", "--porcelain")).not.to be(:include?, worktree)
+	end
+	
+	it "accepts a signing key path and produces a verifiable signed gem" do
+		key = OpenSSL::PKey::RSA.new(2048)
+		certificate = Gem::Security.create_cert_email("test@example.com", key)
+		write("release.cert", certificate.to_pem)
+		write("release.pem", key.to_pem)
+		gemspec_path = File.join(root, "example.gemspec")
+		File.write(gemspec_path, File.read(gemspec_path).sub('spec.summary = "Example"', 'spec.summary = "Example"; spec.cert_chain = ["release.cert"]'))
+		path = bake("gem:build", "signing_key=#{File.join(root, 'release.pem')}")
+		package = Gem::Package.new(path, Gem::Security::Policy.new("Release Test", only_trusted: false))
+		expect(package.verify).to be_truthy
+		expect(OpenSSL::X509::Certificate.new(package.spec.cert_chain.last).to_der).to be == certificate.to_der
+	end
+	
+	it "requires a signing key when requested and permits unsigned builds" do
+		expect{bake("gem:build", "signing_key=true")}.to raise_exception(ArgumentError, message: be =~ /Signing key is required/)
+		path = bake("gem:build", "signing_key=false")
+		expect(Gem::Package.new(path).spec.cert_chain).to be == []
+	end
+	
+	it "publishes the local release commit and only its intended tag" do
+		write(".gitignore", "remote.git/\npkg/\n")
+		commit("Configure local remote")
+		git("init", "--bare", "remote.git")
+		git("remote", "add", "origin", File.join(root, "remote.git"))
+		git("push", "--set-upstream", "origin", "main")
+		git("tag", "unrelated")
+		result = isolated_ruby(<<~RUBY, chdir: root)
+			require "bake/context"
+			context = Bake::Context.load
+			helper = context.lookup("gem:release").instance.helper
+			published = nil
+			helper.define_singleton_method(:push_gem) {|path:| published = Gem::Package.new(path).spec.version.to_s}
+			result = context.call("gem:release:patch")
+			result.merge(published: published)
+		RUBY
+		expect(result).to have_keys(tag: be == "v1.0.1", published: be == "1.0.1")
+		expect(git("--git-dir=remote.git", "tag")).to be == "v1.0.1"
+		expect(git("--git-dir=remote.git", "rev-parse", "main")).to be == git("rev-parse", "HEAD")
+		expect(git("--git-dir=remote.git", "rev-parse", "v1.0.1")).to be == git("rev-parse", "HEAD")
+	end
+	
 	it "rejects a dirty checkout before changing branch or version" do
 		write("unrelated.txt", "Uncommitted")
 		expect{prepare}.to raise_exception(RuntimeError, message: be =~ /uncommited/)
@@ -110,6 +195,13 @@ describe Bake::Gem::Release do
 	it "rejects branch collisions before modifying files" do
 		git("branch", "releases/v1.0.1")
 		expect{prepare}.to raise_exception(Bake::Gem::CommandExecutionError)
+		expect(git("status", "--porcelain")).to be == ""
+	end
+	
+	it "rejects an existing release tag before modifying files" do
+		git("tag", "v1.0.1")
+		expect{prepare}.to raise_exception(RuntimeError, message: be =~ /tag v1.0.1 already exists/)
+		expect(git("branch", "--show-current")).to be == "main"
 		expect(git("status", "--porcelain")).to be == ""
 	end
 	
@@ -138,6 +230,14 @@ describe Bake::Gem::Release do
 		write("bake.rb", "def after_gem_release_version_increment(version); File.write(\"release.pem\", \"-----BEGIN PRIVATE KEY-----\"); end\n")
 		base = commit("Unsafe hook")
 		expect{prepare}.to raise_exception(RuntimeError, message: be =~ /private key/)
+		expect(git("rev-parse", "HEAD")).to be == base
+		expect(git("diff", "--cached", "--name-only")).to be == ""
+	end
+	
+	it "rejects package output generated by hooks before staging it" do
+		write("bake.rb", "def after_gem_release_version_increment(version); File.write(\"example.gem\", \"Package\"); end\n")
+		base = commit("Packaging hook")
+		expect{prepare}.to raise_exception(RuntimeError, message: be =~ /build output/)
 		expect(git("rev-parse", "HEAD")).to be == base
 		expect(git("diff", "--cached", "--name-only")).to be == ""
 	end
