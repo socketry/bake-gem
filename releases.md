@@ -6,7 +6,6 @@
   - Add `gem:release:validate` to detect stale generated release content and unrelated changes.
   - Build committed source in a fresh Ruby process and accept an explicit signing key path with `gem:build`.
   - Push only the intended release tag when publishing locally.
-  - Invoke release tasks directly with `bake` in the worktree, removing verbose Ruby bootstrap commands from release logs.
 
 ## v0.13.1
 
