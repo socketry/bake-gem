@@ -73,7 +73,7 @@ $ bake gem:release
 
 ### Automated CI/CD Pipeline
 
-For releasing gems via automated pipelines, use a two-step process:
+Use `bake-gem-github` for GitHub pull requests, native approval rules, Trusted Publishing and attestations. The provider-independent preparation tasks below work identically locally and in CI.
 
 #### Step 1: Create Release Branch (Locally)
 
@@ -83,21 +83,24 @@ $ bake gem:release:branch:patch  # or minor/major
 ```
 
 This will:
-- Create a new branch named `releases/v[new-version]`
+- Require a clean checkout on a branch
+- Create a new branch named `release-v[new-version]` before modifying files
 - Bump the gem version
-- Commit the version change
-- Push the branch to origin
+- Run `after_gem_release_version_increment` and commit all changes, including added and deleted documentation
+
+This task does not push, open a PR, create tags or publish. Select a current base before running it; the GitHub companion additionally fetches and checks the default branch. Failed hooks leave changes available for inspection.
 
 #### Step 2: Release from CI (After Merge)
 
-Once the release branch is merged into main:
+The GitHub companion handles publishing the exact merged commit. To independently validate release content, supply the current target commit and proposed commit:
 
 ``` bash
-$ export RUBYGEMS_HOST=https://rubygems.org
-$ export GEM_HOST_API_KEY=your_api_key
-
-$ bake gem:release
+$ bundle exec bake gem:release:validate base=origin/main candidate=HEAD
 ```
+
+Validation creates a temporary checkout of the base, applies the proposed patch/minor/major bump, runs the same hooks, and compares the complete generated tree with the candidate. It never bumps the candidate again or modifies your checkout. Stale notes and unexpected file additions/deletions fail with a diff. A rebase passes when the generated content still matches. Hooks must be repeatable for the same source and version.
+
+For an ordinary PR check, add `optional=true` to accept candidates without a version change. After merge, use the merged commit's first parent as `base` and the merged commit as `candidate`; later changes on `main` do not affect that release boundary.
 
 ### Individual Commands
 
@@ -185,12 +188,10 @@ $ bake gem:release:patch
 ``` bash
 # Create release branch
 $ bake gem:release:branch:minor
-# Creates branch: releases/v1.3.0
-# Commits version bump
-# Pushes branch
+# Creates branch: release-v1.3.0
+# Commits the version bump and release-hook output
+# Leaves the branch local for inspection
 
-# After code review and merge:
-$ git checkout main
-$ git pull
-$ bake gem:release
+# Validate before pushing or opening a PR:
+$ bake gem:release:validate base=main
 ```

@@ -89,7 +89,7 @@ module Bake
 			# @parameter root [String] The root directory of the gem project.
 			# @parameter gemspec [Gem::Specification | Nil] The gemspec to use, or nil to find it automatically.
 			def initialize(root = Dir.pwd, gemspec: nil)
-				@root = root
+				@root = File.expand_path(root)
 				@gemspec = gemspec || find_gemspec
 			end
 			
@@ -127,7 +127,8 @@ module Bake
 				# Guard against consecutive version bumps
 				guard_last_commit_not_version_bump
 				
-				lines = File.readlines(version_path)
+				path = File.expand_path(version_path, @root)
+				lines = File.readlines(path)
 				new_version = nil
 				
 				lines.each do |line|
@@ -137,7 +138,7 @@ module Bake
 				end
 				
 				if new_version
-					File.write(version_path, lines.join)
+					File.write(path, lines.join)
 					
 					if block_given?
 						yield new_version
@@ -194,6 +195,7 @@ module Bake
 			# @returns [String] The path to the built gem package.
 			def build_gem(root: "pkg", signing_key: nil)
 				# Ensure the output directory exists:
+				root = File.expand_path(root, @root)
 				FileUtils.mkdir_p(root)
 				
 				output_path = File.join(root, @gemspec.file_name)
@@ -206,7 +208,9 @@ module Bake
 					raise ArgumentError, "Signing key is required for signing the gem, but none was specified by the gemspec."
 				end
 				
-				::Gem::Package.build(@gemspec, false, false, output_path)
+				Dir.chdir(@root) do
+					::Gem::Package.build(@gemspec, false, false, output_path)
+				end
 			end
 			
 			# Install the gem using the `gem install` command.
@@ -228,7 +232,7 @@ module Bake
 			# @parameter signing_key [String | Nil] The signing key to use for signing the package.
 			# @returns [String] The path to the built gem package.
 			def build_gem_in_worktree(root: "pkg", signing_key: nil)
-				original_pkg_path = File.join(@root, root)
+				original_pkg_path = File.expand_path(root, @root)
 				
 				# Create a unique temporary path for the worktree
 				timestamp = Time.now.strftime("%Y%m%d-%H%M%S-%N")
@@ -236,15 +240,13 @@ module Bake
 				
 				begin
 					# Create worktree from current HEAD
-					unless system("git", "worktree", "add", worktree_path, "HEAD", chdir: @root)
+					unless system("git", "worktree", "add", "--detach", worktree_path, "HEAD", chdir: @root)
 						raise "Failed to create git worktree. Make sure you have at least one commit in the repository."
 					end
 					
 					# Create helper for the worktree
-					worktree_helper = self.class.new(worktree_path)
-					
-					# Build gem directly into the target pkg directory
-					output_path = worktree_helper.build_gem(root: original_pkg_path, signing_key: signing_key)
+					require_relative "release"
+					output_path = Release.new(@root).run(worktree_path, "build", root: original_pkg_path, signing_key: signing_key)
 					
 					output_path
 				ensure
@@ -253,16 +255,16 @@ module Bake
 				end
 			end
 			
-			# Create a release branch, add the version file, and commit the changes.
-			# @parameter version_path [String] The path to the version file that was updated.
-			# @parameter message [String] The commit message to use.
+			# Create a release branch before generating release changes.
+			# @parameter version [String] The proposed release version.
 			# @returns [String] The name of the created branch.
-			def create_release_branch(version_path, message: "Bump version.")
-				branch_name = "release-v#{@gemspec.version}"
+			def create_release_branch(version:)
+				guard_clean
+				raise "Release preparation requires a branch checkout." unless current_branch
+				branch_name = "release-v#{version}"
+				raise "Release tag v#{version} already exists." unless readlines("git", "tag", "--list", "v#{version}", chdir: @root).empty?
 				
 				system("git", "checkout", "-b", branch_name, chdir: @root)
-				system("git", "add", version_path, chdir: @root)
-				system("git", "commit", "-m", message, chdir: @root)
 				
 				return branch_name
 			end
@@ -270,8 +272,23 @@ module Bake
 			# Commit version changes to the current branch.
 			# @parameter message [String] The commit message to use.
 			def commit_version_changes(message: "Bump version.")
+				guard_release_changes
 				system("git", "add", "--all", chdir: @root)
 				system("git", "commit", "-m", message, chdir: @root)
+			end
+			
+			# Reject generated package output and private keys before staging release changes.
+			def guard_release_changes
+				paths = readlines("git", "diff", "--name-only", "--diff-filter=ACM", "-z", "HEAD", chdir: @root).join.split("\0")
+				paths.concat(readlines("git", "ls-files", "--others", "--exclude-standard", "-z", chdir: @root).join.split("\0"))
+				paths.uniq.each do |path|
+					raise "Release changes include build output: #{path}" if path.start_with?("pkg/") || path.end_with?(".gem")
+					absolute = File.expand_path(path, @root)
+					next unless File.file?(absolute) && !File.symlink?(absolute)
+					if File.binread(absolute).match?(/^-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----/)
+						raise "Release changes include a private key: #{path}"
+					end
+				end
 			end
 			
 			# Fetch remote tags and create a release tag for the specified version.
@@ -298,13 +315,13 @@ module Bake
 			
 			# Push changes and tags to the remote repository.
 			# @parameter current_branch [String | Nil] The current branch name, or nil if not on a branch.
-			def push_release(current_branch: nil)
+			def push_release(current_branch: nil, tag: nil)
 				# If we are on a branch, push, otherwise just push the tags (assuming shallow checkout):
 				if current_branch
 					system("git", "push", chdir: @root)
 				end
 				
-				system("git", "push", "--tags", chdir: @root)
+				system("git", "push", "origin", "refs/tags/#{tag}", chdir: @root) if tag
 			end
 			
 			# Figure out if there is a current branch, if not, return `nil`.
@@ -330,7 +347,7 @@ module Bake
 				end
 				
 				if path = paths.first
-					return ::Gem::Specification.load(File.expand_path(path, @root))
+					return Dir.chdir(@root){::Gem::Specification.load(File.expand_path(path, @root))}
 				end
 			end
 		end

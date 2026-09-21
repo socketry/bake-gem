@@ -27,7 +27,7 @@ def increment(bump, message: "Bump version.")
 	helper = release.instance.helper
 	gemspec = helper.gemspec
 	
-	helper.update_version(bump) do |version|
+	version_path = helper.update_version(bump) do |version|
 		Console.info(self, "Updated version:", version: version)
 		
 		# Ensure that any subsequent tasks use the correct version!
@@ -35,10 +35,11 @@ def increment(bump, message: "Bump version.")
 		
 		after_increment(version)
 	end
+	raise "Could not find version number!" unless version_path
 	
 	return {
 		version: gemspec.version,
-		version_path: helper.version_path,
+		version_path: version_path,
 	}
 end
 
@@ -52,18 +53,9 @@ def commit(bump, message: "Bump version.")
 	
 	helper.guard_clean
 	
-	version_path = increment(bump, message: message)
-	
-	if version_path
-		helper.commit_version_changes(message: message)
-	else
-		raise "Could not find version number!"
-	end
-	
-	return {
-		version: helper.gemspec.version,
-		version_path: version_path,
-	}
+	result = increment(bump, message: message)
+	helper.commit_version_changes(message: message)
+	return result
 end
 
 protected

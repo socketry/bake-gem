@@ -25,21 +25,15 @@ end
 def commit(bump, message: "Bump version.")
 	release = context.lookup("gem:release")
 	helper = release.instance.helper
-	gemspec = helper.gemspec
-	
-	# helper.guard_clean
-	
-	version_path = context.lookup("gem:release:version:increment").call(bump, message: message)
-	
-	if version_path
-		branch_name = helper.create_release_branch(version_path, message: message)
-	else
-		raise "Could not find version number!"
-	end
-	
-	return {
-		version: gemspec.version,
-		version_path: version_path,
-		branch: branch_name,
-	}
+	helper.guard_clean
+	helper.guard_last_commit_not_version_bump
+	path = helper.version_path or raise "Could not find version file!"
+	line = File.read(File.expand_path(path, helper.root))
+	version = nil
+	Bake::Gem::Version.update_version(line){|current| version = current.increment(bump)}
+	raise "Could not find version number!" unless version
+	branch_name = helper.create_release_branch(version: version.join)
+	result = context.lookup("gem:release:version:increment").call(bump, message: message)
+	helper.commit_version_changes(message: message)
+	return result.merge(branch: branch_name)
 end

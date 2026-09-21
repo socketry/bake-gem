@@ -58,6 +58,7 @@ describe Bake::Gem::Helper do
 				@helper = subject.new(root)
 				
 				system("git", "init", chdir: root)
+				system("git", "config", "core.hooksPath", File::NULL, chdir: root)
 				system("git", "config", "user.email", "test@test.com", chdir: root)
 				system("git", "config", "user.name", "Test User", chdir: root)
 				
@@ -143,6 +144,9 @@ describe Bake::Gem::Helper do
 			
 			# Verify the gem was built in the original location, not worktree
 			expect(package_path).to be(:start_with?, helper.root)
+			package = Gem::Package.new(package_path)
+			expect(package.contents).to be(:include?, "lib/test_gem.rb")
+			expect(package.contents).not.to be(:include?, "lib/bake/gem/helper.rb")
 		end
 	end
 	
