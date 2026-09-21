@@ -6,7 +6,7 @@
   - Add `gem:release:validate` to detect stale generated release content and unrelated changes.
   - Build committed source in a fresh Ruby process and accept an explicit signing key path with `gem:build`.
   - Push only the intended release tag when publishing locally.
-  - Keep internal release subprocess logging concise; enable `CONSOLE_LEVEL=debug` to inspect the full invocation.
+  - Invoke release tasks directly with `bake` in the worktree and log internal invocations only at debug level (`CONSOLE_LEVEL=debug`).
 
 ## v0.13.1
 

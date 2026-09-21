@@ -6,7 +6,6 @@
 require_relative "helper"
 require "json"
 require "tmpdir"
-require "rbconfig"
 
 module Bake
 	module Gem
@@ -46,25 +45,10 @@ module Bake
 			# @parameter arguments [Array(String)] Task names and command line arguments.
 			# @parameter options [Hash] Task options; nil values use the task defaults.
 			def bake(path, *arguments, **options)
-				# Reuse the caller's dependencies and task paths without loading its gemspec:
-				paths = ::Gem.loaded_specs.values.map(&:full_gem_path)
-				paths << File.expand_path("../../..", __dir__)
-				script = <<~RUBY
-					require "bake/context"
-					registry = Bake::Registry::Aggregate.new
-					#{paths.inspect}.each{|path| registry.append_path(path)}
-					registry.append_path(Dir.pwd)
-					registry.append_bakefile(File.expand_path("bake.rb")) if File.file?("bake.rb")
-					context = Bake::Context.new(registry, Dir.pwd)
-					context.bakefile
-					context.call(*ARGV)
-				RUBY
-				
 				Dir.mktmpdir("bake-gem-result-") do |directory|
 					result = File.join(directory, "result.json")
 					options.each{|key, value| arguments << "#{key}=#{value}" unless value.nil?}
-					Console.info(self, "Running Bake tasks.", path: path, tasks: arguments)
-					system({"RUBYOPT" => nil, "BUNDLE_GEMFILE" => nil}, RbConfig.ruby, "-I", $LOAD_PATH.join(File::PATH_SEPARATOR), "-e", script, "--", *arguments, "output", "file=#{result}", "format=json", chdir: path, severity: :debug)
+					system("bake", *arguments, "output", "file=#{result}", "format=json", chdir: path, severity: :debug)
 					JSON.parse(File.read(result), symbolize_names: true)
 				end
 			end
