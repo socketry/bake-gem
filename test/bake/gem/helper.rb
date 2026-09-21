@@ -6,8 +6,8 @@
 
 require "bake/gem/helper"
 require "sus/fixtures/console/null_logger"
+require "sus/fixtures/isolated_ruby_context"
 require "sus/fixtures/temporary_directory_context"
-require "bake/gem/ruby_context"
 
 describe Bake::Gem::Helper do
 	let(:helper) {subject.new}
@@ -52,10 +52,10 @@ describe Bake::Gem::Helper do
 	
 	with "repository" do
 		include Sus::Fixtures::TemporaryDirectoryContext
-		include Bake::Gem::RubyContext
+		include Sus::Fixtures::IsolatedRubyContext
 		
 		def run_helper(source)
-			ruby(<<~RUBY)
+			isolated_ruby(<<~RUBY, chdir: root)
 				require "bake/gem/helper"
 				helper = Bake::Gem::Helper.new
 				#{source}
@@ -94,7 +94,7 @@ describe Bake::Gem::Helper do
 			system("git", "commit", "--allow-empty", "-m", "Bump patch version.", chdir: root)
 			
 			# Attempting another version bump should fail
-			expect{run_helper('helper.update_version([0, 0, 1], "version.rb")')}.to raise_exception(Bake::Gem::CommandExecutionError, message: be =~ /Last commit appears to be a version bump/)
+			expect{run_helper('helper.update_version([0, 0, 1], "version.rb")')}.to raise_exception(RuntimeError, message: be =~ /Last commit appears to be a version bump/)
 		end
 		
 		it "allows version bump when there are no commits (handles exit code 128)" do
@@ -119,7 +119,7 @@ describe Bake::Gem::Helper do
 		it "raises an error if repository is dirty" do
 			File.write(File.expand_path("readme.md", root), "Hello, World!")
 			
-			expect{run_helper("helper.guard_clean")}.to raise_exception(Bake::Gem::CommandExecutionError, message: be =~ /uncommited/)
+			expect{run_helper("helper.guard_clean")}.to raise_exception(RuntimeError, message: be =~ /uncommited/)
 		end
 		
 		it "can build gem in worktree" do

@@ -5,15 +5,15 @@
 
 require "bake/gem/helper"
 require "bake/gem/release"
-require "bake/gem/ruby_context"
 require "sus/fixtures/console/null_logger"
+require "sus/fixtures/isolated_ruby_context"
 require "sus/fixtures/temporary_directory_context"
 require "open3"
 
 describe Bake::Gem::Release do
 	include Sus::Fixtures::Console::NullLogger
 	include Sus::Fixtures::TemporaryDirectoryContext
-	include Bake::Gem::RubyContext
+	include Sus::Fixtures::IsolatedRubyContext
 	
 	def git(*arguments)
 		output, status = Open3.capture2e("git", *arguments, chdir: @root)
@@ -33,9 +33,9 @@ describe Bake::Gem::Release do
 	end
 	
 	def prepare
-		ruby(<<~RUBY)
-			require "bake/gem/release"
-			Bake::Gem::Release.new(Dir.pwd).bake(Dir.pwd, "gem:release:branch:patch")
+		isolated_ruby(<<~RUBY, chdir: root)
+			require "bake/context"
+			Bake::Context.load.call("gem:release:branch:patch")
 		RUBY
 	end
 	
@@ -82,9 +82,9 @@ describe Bake::Gem::Release do
 	end
 	
 	it "builds the committed version even when the caller has loaded the old version" do
-		result = ruby(<<~RUBY)
+		result = isolated_ruby(<<~RUBY, chdir: root)
 			require "bake/gem/release"
-			require_relative "lib/example/version"
+			require "./lib/example/version"
 			release = Bake::Gem::Release.new(Dir.pwd)
 			release.bake(Dir.pwd, "gem:release:branch:patch")
 			package_path = release.worktree("HEAD") do |path|
