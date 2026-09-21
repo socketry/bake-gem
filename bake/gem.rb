@@ -31,7 +31,7 @@ end
 
 # Build the gem into the pkg directory.
 # @parameter root [String] The root directory to build the gem into. Defaults to `pkg`.
-# @parameter signing_key [String | Boolean | Nil] A signing key path, true to require signing, or false to disable signing.
+# @parameter signing_key [String | Nil] A signing key path, "true" to require signing, or "false" to disable signing.
 def build(root: "pkg", signing_key: nil)
 	# Accept boolean command line options while preserving signing key paths:
 	signing_key = true if signing_key == "true"
