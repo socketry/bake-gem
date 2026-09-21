@@ -76,7 +76,7 @@ describe Bake::Gem::Release do
 	
 	it "creates a local branch and commits every hook output without tags or remotes" do
 		result = prepare
-		expect(result[:branch]).to be == "release-v1.0.1"
+		expect(result[:branch]).to be == "releases/v1.0.1"
 		expect(result[:version_path]).to be == "lib/example/version.rb"
 		expect(git("status", "--porcelain")).to be == ""
 		expect(git("tag")).to be == ""
@@ -93,7 +93,7 @@ describe Bake::Gem::Release do
 	end
 	
 	it "rejects branch collisions before modifying files" do
-		git("branch", "release-v1.0.1")
+		git("branch", "releases/v1.0.1")
 		expect{prepare}.to raise_exception(Bake::Gem::CommandExecutionError)
 		expect(git("status", "--porcelain")).to be == ""
 	end
@@ -132,7 +132,7 @@ describe Bake::Gem::Release do
 		git("checkout", "main")
 		write("unrelated.txt", "New main content")
 		base = commit("Independent change")
-		git("checkout", "release-v1.0.1")
+		git("checkout", "releases/v1.0.1")
 		git("rebase", "main")
 		expect(@release.validate(base: base)[:version]).to be == "1.0.1"
 	end
@@ -142,7 +142,7 @@ describe Bake::Gem::Release do
 		git("checkout", "main")
 		write("changes.md", "First change\nNew change\n")
 		base = commit("More release notes")
-		git("checkout", "release-v1.0.1")
+		git("checkout", "releases/v1.0.1")
 		git("rebase", "main")
 		expect{@release.validate(base: base)}.to raise_exception(RuntimeError, message: be =~ /New change/)
 		expect(git("status", "--porcelain")).to be == ""
@@ -158,7 +158,7 @@ describe Bake::Gem::Release do
 	it "validates a squash commit against its first parent even after main advances" do
 		prepare
 		git("checkout", "main")
-		git("merge", "--squash", "release-v1.0.1")
+		git("merge", "--squash", "releases/v1.0.1")
 		merged = commit("Release version 1.0.1")
 		write("later.txt", "Later development")
 		commit("Continue development")

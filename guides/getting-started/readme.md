@@ -84,7 +84,7 @@ $ bake gem:release:branch:patch  # or minor/major
 
 This will:
 - Require a clean checkout on a branch
-- Create a new branch named `release-v[new-version]` before modifying files
+- Create a new branch named `releases/v[new-version]` before modifying files
 - Bump the gem version
 - Run `after_gem_release_version_increment` and commit all changes, including added and deleted documentation
 
@@ -188,7 +188,7 @@ $ bake gem:release:patch
 ``` bash
 # Create release branch
 $ bake gem:release:branch:minor
-# Creates branch: release-v1.3.0
+# Creates branch: releases/v1.3.0
 # Commits the version bump and release-hook output
 # Leaves the branch local for inspection
 

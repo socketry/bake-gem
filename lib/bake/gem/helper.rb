@@ -261,7 +261,7 @@ module Bake
 			def create_release_branch(version:)
 				guard_clean
 				raise "Release preparation requires a branch checkout." unless current_branch
-				branch_name = "release-v#{version}"
+				branch_name = "releases/v#{version}"
 				raise "Release tag v#{version} already exists." unless readlines("git", "tag", "--list", "v#{version}", chdir: @root).empty?
 				
 				system("git", "checkout", "-b", branch_name, chdir: @root)
