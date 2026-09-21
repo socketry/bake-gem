@@ -5,16 +5,15 @@
 
 require "bake/gem/helper"
 require "bake/gem/release"
-require "bake/context"
+require "bake/gem/ruby_context"
 require "sus/fixtures/console/null_logger"
 require "sus/fixtures/temporary_directory_context"
 require "open3"
 
-RELEASE_TASK_ROOT = File.expand_path("../../..", __dir__)
-
 describe Bake::Gem::Release do
 	include Sus::Fixtures::Console::NullLogger
 	include Sus::Fixtures::TemporaryDirectoryContext
+	include Bake::Gem::RubyContext
 	
 	def git(*arguments)
 		output, status = Open3.capture2e("git", *arguments, chdir: @root)
@@ -34,12 +33,10 @@ describe Bake::Gem::Release do
 	end
 	
 	def prepare
-		Dir.chdir(@root) do
-			registry = Bake::Registry::Aggregate.new
-			registry.append_path(RELEASE_TASK_ROOT)
-			registry.append_bakefile(File.join(@root, "bake.rb"))
-			Bake::Context.new(registry, @root).lookup("gem:release:branch:patch").call
-		end
+		ruby(<<~RUBY)
+			require "bake/gem/release"
+			Bake::Gem::Release.new(Dir.pwd).bake(Dir.pwd, "gem:release:branch:patch")
+		RUBY
 	end
 	
 	def around
@@ -70,8 +67,6 @@ describe Bake::Gem::Release do
 			@base = commit("Initial source")
 			@release = subject.new(@root)
 			yield
-		ensure
-			Object.send(:remove_const, :Example) if Object.const_defined?(:Example)
 		end
 	end
 	
@@ -87,16 +82,22 @@ describe Bake::Gem::Release do
 	end
 	
 	it "builds the committed version even when the caller has loaded the old version" do
-		prepare
-		expect(Example::VERSION).to be == "1.0.0"
+		result = ruby(<<~RUBY)
+			require "bake/gem/release"
+			require_relative "lib/example/version"
+			release = Bake::Gem::Release.new(Dir.pwd)
+			release.bake(Dir.pwd, "gem:release:branch:patch")
+			package_path = release.worktree("HEAD") do |path|
+				release.bake(path, "gem:build", root: File.join(Dir.pwd, "packages with spaces"), signing_key: false)
+			end
+			{loaded_version: Example::VERSION, package_path: package_path}
+		RUBY
+		expect(result[:loaded_version]).to be == "1.0.0"
 		
-		@release.worktree("HEAD") do |path|
-			package_path = @release.bake(path, "gem:build", root: File.join(@root, "packages with spaces"), signing_key: false)
-			package = Gem::Package.new(package_path)
-			package.extract_files(File.join(@root, "extracted"))
-			expect(package.spec.version.to_s).to be == "1.0.1"
-			expect(File.read(File.join(@root, "extracted/lib/example/version.rb"))).to be(:include?, 'VERSION = "1.0.1"')
-		end
+		package = Gem::Package.new(result[:package_path])
+		package.extract_files(File.join(@root, "extracted"))
+		expect(package.spec.version.to_s).to be == "1.0.1"
+		expect(File.read(File.join(@root, "extracted/lib/example/version.rb"))).to be(:include?, 'VERSION = "1.0.1"')
 	end
 	
 	it "rejects a dirty checkout before changing branch or version" do

@@ -7,6 +7,7 @@
 require "bake/gem/helper"
 require "sus/fixtures/console/null_logger"
 require "sus/fixtures/temporary_directory_context"
+require "bake/gem/ruby_context"
 
 describe Bake::Gem::Helper do
 	let(:helper) {subject.new}
@@ -51,78 +52,81 @@ describe Bake::Gem::Helper do
 	
 	with "repository" do
 		include Sus::Fixtures::TemporaryDirectoryContext
+		include Bake::Gem::RubyContext
 		
-		let(:helper) {@helper}
+		def run_helper(source)
+			ruby(<<~RUBY)
+				require "bake/gem/helper"
+				helper = Bake::Gem::Helper.new
+				#{source}
+			RUBY
+		end
 		
 		def around
 			super do
-				Dir.chdir(root) do
-					@helper = subject.new(root)
-					
-					system("git", "init", chdir: root)
-					system("git", "config", "core.hooksPath", File::NULL, chdir: root)
-					system("git", "config", "user.email", "test@test.com", chdir: root)
-					system("git", "config", "user.name", "Test User", chdir: root)
-					
-					yield
-				end
+				system("git", "init", chdir: root)
+				system("git", "config", "core.hooksPath", File::NULL, chdir: root)
+				system("git", "config", "user.email", "test@test.com", chdir: root)
+				system("git", "config", "user.name", "Test User", chdir: root)
+				
+				yield
 			end
 		end
 		
 		it "can update the version" do
-			version_path = File.expand_path("version.rb", helper.root)
+			version_path = File.expand_path("version.rb", root)
 			File.write(version_path, "VERSION = '0.0.0'\n")
 			
-			helper.update_version([1, 1, 1], version_path)
+			run_helper('helper.update_version([1, 1, 1], "version.rb")')
 			
 			expect(File.read(version_path)).to be == "VERSION = '1.1.1'\n"
 		end
 		
 		it "prevents consecutive version bumps" do
-			version_path = File.expand_path("version.rb", helper.root)
+			version_path = File.expand_path("version.rb", root)
 			File.write(version_path, "VERSION = '0.0.0'\n")
 			
 			# Create initial commit
-			system("git", "add", ".", chdir: helper.root)
-			system("git", "commit", "-m", "Initial version", chdir: helper.root)
+			system("git", "add", ".", chdir: root)
+			system("git", "commit", "-m", "Initial version", chdir: root)
 			
 			# Create a version bump commit
-			system("git", "commit", "--allow-empty", "-m", "Bump patch version.", chdir: helper.root)
+			system("git", "commit", "--allow-empty", "-m", "Bump patch version.", chdir: root)
 			
 			# Attempting another version bump should fail
-			expect{helper.update_version([0, 0, 1], version_path)}.to raise_exception(RuntimeError, message: be =~ /Last commit appears to be a version bump/)
+			expect{run_helper('helper.update_version([0, 0, 1], "version.rb")')}.to raise_exception(Bake::Gem::CommandExecutionError, message: be =~ /Last commit appears to be a version bump/)
 		end
 		
 		it "allows version bump when there are no commits (handles exit code 128)" do
-			version_path = File.expand_path("version.rb", helper.root)
+			version_path = File.expand_path("version.rb", root)
 			File.write(version_path, "VERSION = '0.0.0'\n")
 			
 			# Don't create any commits, so git log will exit with 128
 			# This should not raise an error and should allow version bump
-			expect{helper.update_version([0, 0, 1], version_path)}.not.to raise_exception
+			expect{run_helper('helper.update_version([0, 0, 1], "version.rb")')}.not.to raise_exception
 		end
 		
 		it "can guard clean" do
-			expect(helper.guard_clean).to be_truthy
+			expect(run_helper("helper.guard_clean")).to be_truthy
 		end
 		
 		it "can list uncommitted changes" do
-			File.write(File.expand_path("readme.md", helper.root), "Hello, World!")
+			File.write(File.expand_path("readme.md", root), "Hello, World!")
 			
-			expect(helper.uncommitted_changes).to be == ["?? readme.md\n"]
+			expect(run_helper("helper.uncommitted_changes")).to be == ["?? readme.md\n"]
 		end
 		
 		it "raises an error if repository is dirty" do
-			File.write(File.expand_path("readme.md", helper.root), "Hello, World!")
+			File.write(File.expand_path("readme.md", root), "Hello, World!")
 			
-			expect{helper.guard_clean}.to raise_exception(RuntimeError)
+			expect{run_helper("helper.guard_clean")}.to raise_exception(Bake::Gem::CommandExecutionError, message: be =~ /uncommited/)
 		end
 		
 		it "can build gem in worktree" do
 			# Create some dummy files:
-			FileUtils.mkdir_p(File.expand_path("lib", helper.root))
-			File.write(File.expand_path("lib/test_gem.rb", helper.root), "# Test gem main file")
-			File.write(File.expand_path("readme.md", helper.root), "# Test Gem")
+			FileUtils.mkdir_p(File.expand_path("lib", root))
+			File.write(File.expand_path("lib/test_gem.rb", root), "# Test gem main file")
+			File.write(File.expand_path("readme.md", root), "# Test Gem")
 			
 			# Create a minimal gemspec for testing that uses git to find files
 			gemspec_content = <<~GEMSPEC
@@ -136,17 +140,17 @@ describe Bake::Gem::Helper do
 				end
 			GEMSPEC
 			
-			File.write(File.expand_path("test-gem.gemspec", helper.root), gemspec_content)
+			File.write(File.expand_path("test-gem.gemspec", root), gemspec_content)
 			
 			# Create an initial commit so we have a HEAD to create worktree from
-			system("git", "add", ".", chdir: helper.root)
-			system("git", "commit", "-m", "Initial commit", chdir: helper.root)
+			system("git", "add", ".", chdir: root)
+			system("git", "commit", "-m", "Initial commit", chdir: root)
 			
-			package_path = helper.build_gem_in_worktree(signing_key: false)
+			package_path = run_helper("helper.build_gem_in_worktree(signing_key: false)")
 			expect(File).to be(:exist?, package_path)
 			
 			# Verify the gem was built in the original location, not worktree
-			expect(package_path).to be(:start_with?, helper.root)
+			expect(File).to be(:identical?, package_path, File.join(root, "pkg/test-gem-1.0.0.gem"))
 			package = Gem::Package.new(package_path)
 			expect(package.contents).to be(:include?, "lib/test_gem.rb")
 			expect(package.contents).not.to be(:include?, "lib/bake/gem/helper.rb")
