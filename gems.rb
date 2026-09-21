@@ -16,13 +16,13 @@ group :maintenance, optional: true do
 	gem "agent-context"
 	
 	gem "utopia-project"
+	
+	gem "decode"
 end
 
 group :test do
 	gem "sus", "~> 0.38"
 	gem "covered"
-	gem "decode"
-	
 	gem "rubocop"
 	gem "rubocop-md"
 	gem "rubocop-socketry"
