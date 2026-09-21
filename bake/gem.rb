@@ -21,10 +21,22 @@ def files
 	@helper.gemspec.files
 end
 
+# Inspect the gem name, version, and version file in the current checkout.
+def metadata
+	gemspec = @helper.gemspec
+	raise "No gemspec found." unless gemspec
+	
+	return {name: gemspec.name, version: gemspec.version.to_s, version_path: @helper.version_path}
+end
+
 # Build the gem into the pkg directory.
 # @parameter root [String] The root directory to build the gem into. Defaults to `pkg`.
-# @parameter signing_key [Boolean] Whether to use a signing key.
+# @parameter signing_key [String | Nil] A signing key path, "true" to require signing, or "false" to disable signing.
 def build(root: "pkg", signing_key: nil)
+	# Accept boolean command line options while preserving signing key paths:
+	signing_key = true if signing_key == "true"
+	signing_key = false if signing_key == "false"
+	
 	@helper.build_gem(root: root, signing_key: signing_key)
 end
 
@@ -70,7 +82,7 @@ def release(tag: true)
 		raise
 	end
 	
-	@helper.push_release(current_branch: current_branch)
+	@helper.push_release(current_branch: current_branch, tag: tag_name)
 	context["after_gem_release"]&.call(name: @helper.gemspec.name, version: version, tag: tag_name, path: path)
 	
 	return {

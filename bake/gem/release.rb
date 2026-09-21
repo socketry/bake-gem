@@ -35,3 +35,13 @@ def major(tag: true)
 	release_task = context.lookup("gem:release")
 	release_task.call(tag: tag)
 end
+
+# Regenerate release content from the base commit and compare it with the candidate.
+# @parameter base [String] The current target commit (first parent when publishing).
+# @parameter candidate [String] The proposed or merged release commit.
+# @parameter optional [Boolean] Accept ordinary PRs with no version change.
+def validate(base:, candidate: "HEAD", optional: false)
+	require_relative "../../lib/bake/gem/helper"
+	require_relative "../../lib/bake/gem/release"
+	Bake::Gem::Release.new(context.root).validate(base: base, candidate: candidate, optional: optional)
+end

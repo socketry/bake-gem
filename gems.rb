@@ -19,7 +19,7 @@ group :maintenance, optional: true do
 end
 
 group :test do
-	gem "sus"
+	gem "sus", "~> 0.38"
 	gem "covered"
 	gem "decode"
 	
